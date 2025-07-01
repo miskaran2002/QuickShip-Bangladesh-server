@@ -9,6 +9,8 @@ const { ObjectId } = require('mongodb');
 // Load environment variables from .env file
 dotenv.config();
 
+const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY); // Initialize Stripe with your secret key
+
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -34,8 +36,10 @@ async function run() {
         // Connect the client to the server	(optional starting in v4.7)
         await client.connect();
 
-        const db= client.db("parcelDB");
+        const db = client.db("parcelDB");
         const parcelsCollection = db.collection("parcels");
+        const paymentsCollection = db.collection("payments");
+
 
         // parcels api
         // GET parcels (optionally filter by creatorEmail)
@@ -55,6 +59,27 @@ async function run() {
                 res.status(500).send({ success: false, error: 'Internal server error' });
             }
         });
+        // get a single parcel by id
+        // This endpoint retrieves a single parcel by its ID
+        app.get('/parcels/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+
+                const parcel = await parcelsCollection.findOne({ _id: new ObjectId(id) });
+
+                if (parcel) {
+                    res.send({ success: true, data: parcel });
+                } else {
+                    res.status(404).send({ success: false, error: 'Parcel not found' });
+                }
+            } catch (error) {
+                console.error('❌ Error fetching parcel by ID:', error);
+                res.status(500).send({ success: false, error: 'Internal server error' });
+            }
+        });
+
+
+
 
         // delete a single parcel
         app.delete('/parcels/:id', async (req, res) => {
@@ -72,7 +97,7 @@ async function run() {
                 res.status(500).send({ success: false, error: 'Internal server error' });
             }
         });
-        
+
 
 
 
@@ -87,7 +112,71 @@ async function run() {
                 res.status(500).send({ success: false, error: 'Failed to insert parcel' });
             }
         });
-        
+
+
+
+        // payment intent
+        app.post('/create-payment-intent', async (req, res) => {
+            try {
+                const { amount } = req.body;
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount,
+                    currency: 'usd',
+                });
+                res.json({ clientSecret: paymentIntent.client_secret });
+            } catch (error) {
+                res.status(500).json({ error: error.message });
+            }
+        });
+
+
+
+        // POST /payments - Save payment info
+        app.post('/payments', async (req, res) => {
+            const payment = req.body;
+
+            if (!payment.parcelId || !payment.userEmail || !payment.transactionId) {
+                return res.status(400).json({ error: 'Missing required fields' });
+            }
+
+            payment.createdAt = new Date(); // for sorting
+            const insertResult = await paymentsCollection.insertOne(payment);
+
+            // Mark parcel as paid
+            await parcelsCollection.updateOne(
+                { _id: new ObjectId(payment.parcelId) },
+                { $set: { payment_status: 'paid' } }
+            );
+
+            res.send({ success: true, insertedId: insertResult.insertedId });
+        });
+
+        // GET /payments?email=user@example.com - Get payments by user
+        app.get('/payments', async (req, res) => {
+            const email = req.query.email;
+
+            const query = email ? { userEmail: email } : {};
+            const result = await paymentsCollection
+                .find(query)
+                .sort({ createdAt: -1 }) // Newest first
+                .toArray();
+
+            res.send(result);
+        });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -120,11 +209,11 @@ run().catch(console.dir);
 
 // Routes
 app.get('/', (req, res) => {
-    res.send('Zap Shift Server is running'); 
+    res.send('Zap Shift Server is running');
 });
 
 // Start server
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
-    
+
 })
