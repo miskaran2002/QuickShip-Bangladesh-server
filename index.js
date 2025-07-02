@@ -40,7 +40,7 @@ async function run() {
         const parcelsCollection = db.collection("parcels");
         const paymentsCollection = db.collection("payments");
 
-
+        //  parcel related api
         // parcels api
         // GET parcels (optionally filter by creatorEmail)
         app.get('/parcels', async (req, res) => {
@@ -114,7 +114,7 @@ async function run() {
         });
 
 
-
+        // payment related api
         // payment intent
         app.post('/create-payment-intent', async (req, res) => {
             try {
