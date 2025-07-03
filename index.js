@@ -39,6 +39,22 @@ async function run() {
         const db = client.db("parcelDB");
         const parcelsCollection = db.collection("parcels");
         const paymentsCollection = db.collection("payments");
+        const trackingsCollection = db.collection("trackings");
+        const usersCollection = db.collection("users");
+
+
+        // users related api
+        app.post('/users', async (req, res) => {
+           const email = req.body.email;
+           const userExists= await usersCollection.findOne({email:email});
+              if (userExists) {
+                return res.status(200).send({ message: 'User already exists' ,inserted: false});
+              }
+              const user= req.body;
+              const result = await usersCollection.insertOne(user);
+              res.send(result);
+
+        });
 
         //  parcel related api
         // parcels api
@@ -46,6 +62,7 @@ async function run() {
         app.get('/parcels', async (req, res) => {
             try {
                 const email = req.query.email;
+               
                 const filter = email ? { creatorEmail: email } : {};
 
                 const parcels = await parcelsCollection
@@ -163,7 +180,44 @@ async function run() {
 
             res.send(result);
         });
+        // tracking related apis
+        // GET /trackings/:trackingId
+        app.get('/trackings/:trackingId', async (req, res) => {
+            const { trackingId } = req.params;
 
+            const updates = await trackingsCollection
+                .find({ trackingId })
+                .sort({ timestamp: 1 }) // chronological order
+                .toArray();
+
+            if (!updates.length) {
+                return res.status(404).send({ success: false, error: 'No tracking updates found' });
+            }
+
+            res.send({ success: true, data: updates });
+        });
+
+        // POST /trackings
+        // POST /trackings
+        app.post('/trackings', async (req, res) => {
+            const { trackingId, parcelId, userEmail, status, location } = req.body;
+
+            if (!trackingId || !parcelId || !userEmail || !status || !location) {
+                return res.status(400).send({ error: 'Missing required fields' });
+            }
+
+            const trackingEntry = {
+                trackingId,
+                parcelId: new ObjectId(parcelId),
+                userEmail,
+                status,
+                location,
+                timestamp: new Date()
+            };
+
+            const result = await trackingsCollection.insertOne(trackingEntry);
+            res.send({ success: true, insertedId: result.insertedId });
+        });
 
 
 
